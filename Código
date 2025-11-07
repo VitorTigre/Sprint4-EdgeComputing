@@ -1,0 +1,99 @@
+Código 
+
+#include <WiFi.h>
+#include <Wire.h>
+#include <PubSubClient.h>
+
+
+const char* ssid = "Wokwi-GUEST";
+const char* password = "";
+
+const char* mqtt_server = "a1dngxeo9hbqtg-ats.iot.us-east-1.amazonaws.com";
+const int mqtt_port = 8883;
+
+
+const char* cert_ca = "/ca.pem";
+const char* cert_crt = "/cert.pem.crt";
+const char* cert_private = "/private.pem.key";
+
+WiFiClientSecure wifiClient;
+PubSubClient client(wifiClient);
+
+
+MPU6050 accelgyro;
+const int potPin = 34;
+const int SDA_PIN = 21;
+const int SCL_PIN = 22;
+
+void setup() {
+  Serial.begin(115200);
+
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+  accelgyro.initialize();
+
+  connectWiFi();
+  setupAWS();
+}
+
+void loop() {
+  
+  int potValue = analogRead(potPin);          
+  int heartRate = map(potValue, 0, 4095, 60, 180);
+  int oxygenLevel = map(potValue, 0, 4095, 90, 100);
+
+  int16_t ax, ay, az;
+  accelgyro.getAcceleration(&ax, &ay, &az);
+
+  
+  String payload = "{";
+  payload += "\"heartRate\":" + String(heartRate) + ",";
+  payload += "\"oxygen\":" + String(oxygenLevel) + ",";
+  payload += "\"accelX\":" + String(ax) + ",";
+  payload += "\"accelY\":" + String(ay) + ",";
+  payload += "\"accelZ\":" + String(az);
+  payload += "}";
+
+  
+  if (!client.connected()) {
+    reconnectAWS();
+  }
+  client.loop();
+  client.publish("meuTopico/sensores", payload.c_str());
+
+  Serial.println("Enviado: " + payload);
+  delay(5000);
+}
+
+
+void connectWiFi() {
+  Serial.println("Conectando ao WiFi...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi conectado!");
+}
+
+void setupAWS() {
+  wifiClient.setCACert(cert_ca);
+  wifiClient.setCertificate(cert_crt);
+  wifiClient.setPrivateKey(cert_private);
+
+  client.setServer(mqtt_server, mqtt_port);
+}
+
+void reconnectAWS() {
+  while (!client.connected()) {
+    Serial.print("Conectando à AWS IoT...");
+    if (client.connect("ESP32Device")) {
+      Serial.println("conectado!");
+    } else {
+      Serial.print("falhou, rc=");
+      Serial.print(client.state());
+      Serial.println(" tentando novamente em 5s...");
+      delay(5000);
+    }
+  }
+}
